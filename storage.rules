@@ -1,0 +1,14 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /evidencias/{fileName} {
+      // Qualquer hóspede pode enviar uma foto (até 5MB, só imagens)
+      allow write: if request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+      // Leitura pública: necessária para o <img src> funcionar no painel do Diretor.
+      // O nome do ficheiro é aleatório e só é conhecido por quem tem o link.
+      allow read: if true;
+      allow delete: if request.auth != null; // só o Diretor autenticado pode apagar
+    }
+  }
+}

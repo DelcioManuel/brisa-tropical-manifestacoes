@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Livro de Manifestações Digital | Hotel Brisa Tropical</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Firebase (base de dados partilhada + upload de fotos) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        hotelGold: '#D4AF37',
+                        hotelGreen: '#064E3B',
+                        hotelGreenHover: '#043427'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-stone-50 font-sans text-stone-900 min-h-screen flex flex-col justify-between">
+
+    <!-- CABEÇALHO PRINCIPAL COM LOGOTIPO OFICIAL (PASTA ASSETS) -->
+    <header class="bg-white border-b border-stone-100 py-3 px-6 sticky top-0 z-50 shadow-sm">
+        <div class="max-w-4xl mx-auto flex justify-between items-center">
+            <div class="flex items-center h-12">
+                <img src="assets/Logotipo_b.png" alt="Hotel Brisa Tropical" class="h-12 w-auto object-contain block" onerror="this.style.display='none'; document.getElementById('brand-text').classList.remove('hidden');">
+                <span id="brand-text" class="hidden font-serif tracking-widest text-sm font-bold text-hotelGreen uppercase">Brisa Tropical</span>
+            </div>
+            
+            <!-- Controle de Idioma Trilingue -->
+            <div class="flex items-center space-x-1 bg-stone-100 p-1 rounded-xl text-[10px] font-bold border border-stone-200 shadow-inner">
+                <button onclick="setLanguage('pt')" class="px-2.5 py-1 rounded-lg text-stone-600 hover:bg-white hover:text-hotelGreen transition">PT</button>
+                <button onclick="setLanguage('en')" class="px-2.5 py-1 rounded-lg text-stone-600 hover:bg-white hover:text-hotelGreen transition">EN</button>
+                <button onclick="setLanguage('zh')" class="px-2.5 py-1 rounded-lg text-stone-600 hover:bg-white hover:text-hotelGreen transition">中文</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- FORMULÁRIO DE MANIFESTAÇÃO DO CLIENTE -->
+    <main class="flex-grow flex items-center justify-center px-4 py-12">
+        <div class="max-w-xl w-full bg-white rounded-2xl shadow-xl border border-stone-200/60 p-8 md:p-10 transition">
+            <div class="text-center mb-8">
+                <h1 id="txt-title" class="font-serif text-3xl font-bold text-hotelGreen tracking-tight">Livro de Manifestações Digital</h1>
+                <p id="txt-subtitle" class="text-xs text-stone-400 mt-2 font-medium">A sua opinião é totalmente anónima</p>
+            </div>
+
+            <form id="manifestationForm" class="space-y-6">
+                <!-- Seleção do Tipo de Registro -->
+                <div>
+                    <label id="txt-typeLabel" class="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-3">Tipo de Manifestação</label>
+                    <div class="grid grid-cols-3 gap-3">
+                        <label class="cursor-pointer border border-stone-200 rounded-xl p-3.5 flex flex-col items-center justify-center bg-stone-50/50 hover:bg-red-50/30 hover:border-red-200 transition text-center group">
+                            <input type="radio" name="type" value="Reclamação" checked class="sr-only accent-red-600">
+                            <span id="txt-rec" class="text-xs font-semibold text-stone-700 group-hover:text-red-700 transition">Reclamação</span>
+                        </label>
+                        <label class="cursor-pointer border border-stone-200 rounded-xl p-3.5 flex flex-col items-center justify-center bg-stone-50/50 hover:bg-amber-50/30 hover:border-amber-200 transition text-center group">
+                            <input type="radio" name="type" value="Sugestão" class="sr-only accent-amber-500">
+                            <span id="txt-sug" class="text-xs font-semibold text-stone-700 group-hover:text-amber-700 transition">Sugestão</span>
+                        </label>
+                        <label class="cursor-pointer border border-stone-200 rounded-xl p-3.5 flex flex-col items-center justify-center bg-stone-50/50 hover:bg-emerald-50/30 hover:border-emerald-200 transition text-center group">
+                            <input type="radio" name="type" value="Elogio" class="sr-only accent-emerald-600">
+                            <span id="txt-elo" class="text-xs font-semibold text-stone-700 group-hover:text-emerald-700 transition">Elogio</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Campo da Mensagem -->
+                <div>
+                    <label id="txt-msgLabel" class="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">A sua Mensagem</label>
+                    <textarea id="message" required rows="5" class="w-full px-4 py-3 border border-stone-200 rounded-xl outline-none text-sm focus:ring-1 focus:ring-hotelGreen bg-stone-50/30 transition resize-none placeholder:text-stone-300" placeholder="Por favor, descreva detalhadamente a sua experiência..."></textarea>
+                </div>
+
+                <!-- INTERFACE DE ANEXO -->
+                <div>
+                    <label id="txt-fileLabel" class="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">Anexar Evidência Visual (Opcional)</label>
+                    
+                    <div class="flex items-center gap-3">
+                        <input type="file" id="fileInput" accept="image/*" onchange="fn_handlePhotoPreview(this)" class="sr-only"/>
+                        
+                        <button type="button" onclick="document.getElementById('fileInput').click()" class="bg-stone-100 hover:bg-stone-200 text-stone-700 px-4 py-2.5 rounded-xl font-semibold transition text-xs shadow-sm active:scale-95">
+                            <span id="txt-selectBtn">Escolher Ficheiro...</span>
+                        </button>
+                        
+                        <span id="txt-fileStatus" class="text-xs text-stone-400 font-medium truncate max-w-[220px]">Não foi escolhido nenhum ficheiro</span>
+                    </div>
+                    
+                    <!-- Container para Pré-visualização da Imagem -->
+                    <div id="photoPreviewContainer" class="hidden mt-3 relative inline-block">
+                        <img id="photoPreview" src="" class="h-24 w-auto rounded-xl border border-stone-200 object-cover shadow-sm"/>
+                        <button type="button" onclick="removerFotoPreview()" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full h-5 w-5 flex items-center justify-center text-[10px] font-bold shadow-md hover:bg-red-600 transition" title="Remover imagem">✕</button>
+                    </div>
+                </div>
+
+                <!-- Botão de Ação -->
+                <button type="submit" id="txt-btnSend" class="w-full bg-hotelGreen text-white text-sm font-semibold py-3.5 rounded-xl hover:bg-hotelGreenHover shadow-md transition transform active:scale-[0.99]">
+                    Enviar Manifestação
+                </button>
+            </form>
+        </div>
+    </main>
+
+    <!-- TOAST NOTIFICAÇÃO DE SUCESSO -->
+    <div id="successToast" class="hidden fixed bottom-6 right-6 max-w-sm w-full bg-white border border-emerald-100 rounded-xl shadow-xl p-4 flex space-x-3 transition animate-bounce">
+        <div class="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 shrink-0">
+            ✓
+        </div>
+        <div>
+            <h4 id="txt-successTitle" class="text-xs font-bold text-stone-800">Enviado com sucesso!</h4>
+            <p id="txt-successSub" class="text-[11px] text-stone-400 mt-0.5 leading-relaxed">Agradecemos a sua partilha. Nenhuns dados pessoais ou digitais foram guardados.</p>
+        </div>
+    </div>
+
+    <!-- RODAPÉ E LINK ADMINISTRATIVO -->
+    <footer class="bg-white border-t border-stone-100 py-4 px-6 text-center">
+        <a href="admin.html" id="txt-adminLink" class="text-xs font-semibold text-stone-400 hover:text-hotelGold transition tracking-wider uppercase">Área Administrativa</a>
+    </footer>
+
+    <!-- SCRIPT DE INICIALIZAÇÃO E TRADUÇÃO -->
+    <script src="js/firebase-config.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+        fn_styleRadios();
+
+        function fn_styleRadios() {
+            const radios = document.querySelectorAll('input[name="type"]');
+            radios.forEach(radio => {
+                const label = radio.closest('label');
+                if (radio.checked) {
+                    label.classList.remove('bg-stone-50/50', 'border-stone-200');
+                    if(radio.value === 'Reclamação') label.classList.add('bg-red-50/40', 'border-red-400', 'ring-1', 'ring-red-400');
+                    if(radio.value === 'Sugestão') label.classList.add('bg-amber-50/40', 'border-amber-400', 'ring-1', 'ring-amber-400');
+                    if(radio.value === 'Elogio') label.classList.add('bg-emerald-50/40', 'border-emerald-400', 'ring-1', 'ring-emerald-400');
+                } else {
+                    label.className = "cursor-pointer border border-stone-200 rounded-xl p-3.5 flex flex-col items-center justify-center bg-stone-50/50 hover:bg-stone-100 transition text-center group";
+                }
+            });
+        }
+
+        function fn_handlePhotoPreview(input) {
+            const previewContainer = document.getElementById('photoPreviewContainer');
+            const previewImg = document.getElementById('photoPreview');
+            const statusTxt = document.getElementById('txt-fileStatus');
+            
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                statusTxt.innerText = input.files[0].name;
+                
+                reader.onload = function(e) {
+                    previewImg.src = e.target.result;
+                    previewContainer.classList.remove('hidden');
+                }
+                reader.readAsDataURL(input.files[0]);
+            } else {
+                removerFotoPreview();
+            }
+        }
+
+        function removerFotoPreview() {
+            const input = document.getElementById('fileInput');
+            const previewContainer = document.getElementById('photoPreviewContainer');
+            const previewImg = document.getElementById('photoPreview');
+            
+            if (input) input.value = "";
+            if (previewImg) previewImg.src = "";
+            if (previewContainer) previewContainer.classList.add('hidden');
+            
+            if (typeof applyTranslations === "function") {
+                applyTranslations();
+            }
+        }
+
+        document.querySelectorAll('input[name="type"]').forEach(input => {
+            input.addEventListener('change', fn_styleRadios);
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            applyTranslations();
+            fn_styleRadios();
+        });
+    </script>
+</body>
+</html>

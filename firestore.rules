@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /manifestations/{docId} {
+      allow create: if true;                 // qualquer hóspede pode enviar (anónimo)
+      allow read, update, delete: if request.auth != null;  // só o Diretor autenticado pode ver/gerir
+    }
+  }
+}
