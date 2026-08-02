@@ -40,7 +40,10 @@ const i18n = {
         fileLabel: "Anexar Evidência Visual (Opcional)",
         selectBtn: "Escolher Ficheiro...",
         fileNone: "Não foi escolhido nenhum ficheiro",
-        connErr: "Erro de ligação à base de dados.", uploadErr: "Não foi possível enviar a foto, mas a mensagem foi enviada."
+        connErr: "Erro de ligação à base de dados.", uploadErr: "Não foi possível enviar a foto, mas a mensagem foi enviada.",
+        msgTooLong: "A mensagem é demasiado longa (máximo 2000 caracteres).",
+        fileTypeErr: "O ficheiro tem de ser uma imagem (JPG, PNG, etc.).",
+        fileSizeErr: "A imagem é demasiado grande (máximo 15MB)."
     },
     en: {
         title: "Digital Feedback Book",
@@ -70,7 +73,10 @@ const i18n = {
         fileLabel: "Attach Visual Evidence (Optional)",
         selectBtn: "Select File...",
         fileNone: "No file chosen",
-        connErr: "Database connection error.", uploadErr: "Could not upload the photo, but your message was sent."
+        connErr: "Database connection error.", uploadErr: "Could not upload the photo, but your message was sent.",
+        msgTooLong: "Message is too long (maximum 2000 characters).",
+        fileTypeErr: "The file must be an image (JPG, PNG, etc.).",
+        fileSizeErr: "The image is too large (maximum 15MB)."
     },
     zh: {
         title: "数字化意见簿",
@@ -100,11 +106,37 @@ const i18n = {
         fileLabel: "添加图片证据 (可选)",
         selectBtn: "选择文件...",
         fileNone: "未选择任何文件",
-        connErr: "数据库连接错误。", uploadErr: "照片上传失败，但您的留言已成功提交。"
+        connErr: "数据库连接错误。", uploadErr: "照片上传失败，但您的留言已成功提交。",
+        msgTooLong: "留言过长（最多2000字符）。",
+        fileTypeErr: "文件必须是图片格式（JPG、PNG等）。",
+        fileSizeErr: "图片过大（最大15MB）。"
     }
 };
 
 let currentLang = localStorage.getItem('hotel_lang') || 'pt';
+
+// ==========================================
+// 1.1 SEGURANÇA — SANITIZAÇÃO DE INPUT (proteção contra XSS)
+// ==========================================
+// As mensagens guardadas vêm de hóspedes anónimos e não são confiáveis. Antes de as inserir
+// no HTML do painel (innerHTML) ou do relatório PDF, é obrigatório escapar caracteres especiais
+// para impedir que alguém injete <script> ou tags maliciosas que corram no navegador do Diretor.
+function escapeHTML(valor) {
+    if (valor === null || valor === undefined) return '';
+    return String(valor)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Limites de validação client-side (a validação que realmente conta está nas Firestore Security
+// Rules — isto é só para dar feedback imediato e boa experiência ao hóspede).
+const LIMITES = {
+    MENSAGEM_MAX: 2000,
+    FOTO_MAX_BYTES: 15 * 1024 * 1024 // 15MB antes de comprimir
+};
 
 function setLanguage(lang) {
     currentLang = lang;
@@ -219,6 +251,32 @@ function comprimirImagem(file, maxWidth = 1280, qualidade = 0.75) {
 const MANIFESTATIONS_COLLECTION = 'manifestations';
 
 const clientForm = document.getElementById('manifestationForm');
+
+// ==========================================
+// Upload para Cloudinary
+// ==========================================
+async function uploadToCloudinary(file) {
+    const formData = new FormData();
+
+    formData.append("file", file);
+    formData.append("upload_preset", "brisa_tropical");
+
+    const response = await fetch(
+        "https://api.cloudinary.com/v1_1/od9zruhg/image/upload",
+        {
+            method: "POST",
+            body: formData
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error("Erro ao enviar imagem para o Cloudinary.");
+    }
+
+    const data = await response.json();
+
+    return data.secure_url;
+}
 if (clientForm) {
     clientForm.addEventListener('submit', async function (e) {
         e.preventDefault();
@@ -226,9 +284,26 @@ if (clientForm) {
         const checkedRadio = document.querySelector('input[name="type"]:checked');
         if (!checkedRadio) return;
         const selectedType = checkedRadio.value;
-        const messageText = document.getElementById('message').value;
+        const messageText = document.getElementById('message').value.trim();
         const fileInput = document.getElementById('fileInput');
         const t = i18n[currentLang];
+
+        if (!messageText) return; // campo obrigatório (o "required" do HTML já trata disto, isto é defesa extra)
+        if (messageText.length > LIMITES.MENSAGEM_MAX) {
+            alert(t.msgTooLong);
+            return;
+        }
+        if (fileInput && fileInput.files && fileInput.files[0]) {
+            const ficheiro = fileInput.files[0];
+            if (!ficheiro.type.startsWith('image/')) {
+                alert(t.fileTypeErr);
+                return;
+            }
+            if (ficheiro.size > LIMITES.FOTO_MAX_BYTES) {
+                alert(t.fileSizeErr);
+                return;
+            }
+        }
 
         const btn = document.getElementById('txt-btnSend');
         const original = btn ? btn.innerText : "...";
@@ -240,15 +315,12 @@ if (clientForm) {
             API_Traduzir(messageText, 'en')
         ]);
 
-        // Se houver foto, comprime e sobe para o Firebase Storage
+        // Se houver foto, comprime e sobe para o Cloudinary
         let photoURL = null;
         if (fileInput && fileInput.files && fileInput.files[0]) {
             try {
                 const blobComprimido = await comprimirImagem(fileInput.files[0]);
-                const caminho = `evidencias/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
-                const ref = storage.ref().child(caminho);
-                await ref.put(blobComprimido, { contentType: 'image/jpeg' });
-                photoURL = await ref.getDownloadURL();
+                photoURL = await uploadToCloudinary(blobComprimido);
             } catch (err) {
                 console.error("Erro ao subir a foto:", err);
                 alert(t.uploadErr);
@@ -316,6 +388,22 @@ if (auth) {
             document.getElementById('loginSection').classList.remove('hidden');
             document.getElementById('adminDashboard').classList.add('hidden');
             if (unsubscribeListener) { unsubscribeListener(); unsubscribeListener = null; }
+        }
+    });
+
+    // CORREÇÃO DO BOTÃO VOLTAR/AVANÇAR DO NAVEGADOR:
+    // Quando a página é restaurada a partir do cache do navegador (bfcache) — o que acontece
+    // ao usar as setas de voltar/avançar — o ecrã pode ficar "congelado" no estado visual de
+    // um instante anterior (ex.: a mostrar o login mesmo já estando autenticado). Este listener
+    // força a página a verificar sempre o estado real de sessão nesses casos.
+    window.addEventListener('pageshow', (event) => {
+        if (event.persisted && document.getElementById('adminDashboard')) {
+            if (auth.currentUser) {
+                showDashboard();
+            } else {
+                document.getElementById('loginSection').classList.remove('hidden');
+                document.getElementById('adminDashboard').classList.add('hidden');
+            }
         }
     });
 }
@@ -424,7 +512,7 @@ function renderDashboard() {
         tr.className = "hover:bg-stone-50 transition border-b border-stone-100";
         tr.innerHTML = `
             <td class="p-4 whitespace-nowrap align-top">${typeBadge}</td>
-            <td class="p-4 text-xs md:text-sm text-stone-600 max-w-md break-words font-medium align-top">${mensagemExibida}${retranslateBtn}${evidenciaThumb}</td>
+            <td class="p-4 text-xs md:text-sm text-stone-600 max-w-md break-words font-medium align-top">${escapeHTML(mensagemExibida)}${retranslateBtn}${evidenciaThumb}</td>
             <td class="p-4 text-xs font-mono text-stone-400 whitespace-nowrap align-top">${formatTimestamp(item.createdAt)}</td>
             <td class="p-4 whitespace-nowrap align-top">
                 <select onchange="updateStatus('${item.id}', this.value)" class="text-xs bg-stone-50 border border-stone-200 rounded-lg p-1.5 outline-none font-medium text-stone-700">
@@ -479,12 +567,9 @@ async function updateStatus(id, newStatus) {
 async function deleteMessage(id) {
     if (!confirm(i18n[currentLang].confirmDel)) return;
     try {
-        const item = cachedMessages.find(m => m.id === id);
         await db.collection(MANIFESTATIONS_COLLECTION).doc(id).delete();
-        // Também apaga a foto do Storage, se existir, para não acumular lixo
-        if (item && item.photoURL) {
-            try { await storage.refFromURL(item.photoURL).delete(); } catch (e) { /* não crítico */ }
-        }
+        // Nota: a foto associada (se existir) fica no Cloudinary. Apagar do Cloudinary a partir
+        // do browser exigiria expor a API secret, o que não é seguro — por isso só removemos o registo.
     } catch (err) {
         console.error("Erro ao eliminar:", err);
         alert(i18n[currentLang].connErr);
@@ -635,7 +720,7 @@ async function exportToPDF() {
                 <td style="padding: 10px; font-size: 12px;">${tipoTraduzido}</td>
                 <td style="padding: 10px; font-size: 12px;">${estadoTraduzido}</td>
                 <td style="padding: 10px; font-size: 12px; font-family: monospace; color: #666;">${formatTimestamp(item.createdAt)}</td>
-                <td style="padding: 10px; font-size: 12px; max-width: 320px; word-break: break-all;">${mensagemFinal}</td>
+                <td style="padding: 10px; font-size: 12px; max-width: 320px; word-break: break-all;">${escapeHTML(mensagemFinal)}</td>
             </tr>
         `;
     });
