@@ -6,13 +6,10 @@
     <title>Livro de Manifestações Digital | Hotel Brisa Tropical</title>
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- Firebase (base de dados partilhada) -->
+    <!-- Firebase (base de dados partilhada + upload de fotos) -->
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-
-    <!-- EmailJS (notificação por email ao Diretor) -->
-    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-
+    
     <script>
         tailwind.config = {
             theme: {
@@ -87,7 +84,10 @@
                     <div class="flex items-center gap-3">
                         <input type="file" id="fileInput" accept="image/*" onchange="fn_handlePhotoPreview(this)" class="sr-only"/>
                         
-                        <button type="button" onclick="document.getElementById('fileInput').click()" class="bg-stone-100 hover:bg-stone-200 text-stone-700 px-4 py-2.5 rounded-xl font-semibold transition text-xs shadow-sm active:scale-95">
+                        <button type="button" onclick="document.getElementById('fileInput').click()" class="bg-stone-100 hover:bg-stone-200 text-stone-700 px-4 py-2.5 rounded-xl font-semibold transition text-xs shadow-sm active:scale-95 flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                            </svg>
                             <span id="txt-selectBtn">Escolher Ficheiro...</span>
                         </button>
                         
@@ -126,6 +126,7 @@
     </footer>
 
     <!-- SCRIPT DE INICIALIZAÇÃO E TRADUÇÃO -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="js/email-config.js"></script>
     <script src="js/firebase-config.js"></script>
     <script src="js/app.js"></script>
