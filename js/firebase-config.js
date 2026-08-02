@@ -1,7 +1,6 @@
 // ==========================================
 // CONFIGURAÇÃO DO FIREBASE
 // ==========================================
-
 const firebaseConfig = {
     apiKey: "AIzaSyAx8i1gPWkxyZbcU_jbipWk8KdpVpylVBo",
     authDomain: "brisa-tropical.firebaseapp.com",
@@ -12,11 +11,18 @@ const firebaseConfig = {
 };
 
 firebase.initializeApp(firebaseConfig);
-
 const db = firebase.firestore();
-const storage = firebase.storage();
-
+// 'auth' só existe realmente na página admin (SDK de Auth só lá está carregado),
+// mas declaramos aqui para não rebentar o index.html.
 const auth =
     (typeof firebase.auth === "function")
         ? firebase.auth()
         : null;
+
+// Persistência de sessão do tipo "SESSION": o Diretor fica com sessão aberta enquanto
+// o navegador estiver aberto, mas ao fechá-lo tem de voltar a fazer login.
+if (auth) {
+    auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch((err) => {
+        console.warn('Não foi possível definir a persistência de sessão:', err);
+    });
+}
