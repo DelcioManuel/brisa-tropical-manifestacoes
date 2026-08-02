@@ -277,6 +277,30 @@ async function uploadToCloudinary(file) {
 
     return data.secure_url;
 }
+
+// ==========================================
+// Notificação por Email (EmailJS)
+// ==========================================
+// Avisa o Diretor por email sempre que chega uma nova manifestação. Não é crítico:
+// se falhar (config em falta, sem rede, etc.) fica só registado na consola — a
+// manifestação já foi guardada no Firestore de qualquer forma.
+async function notificarDiretorPorEmail(tipo, mensagem) {
+    if (typeof emailjs === 'undefined' || typeof NOTIFICACOES_ATIVAS === 'undefined' || !NOTIFICACOES_ATIVAS) {
+        return;
+    }
+    try {
+        const resumo = mensagem.length > 200 ? mensagem.slice(0, 200) + '…' : mensagem;
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+            to_email: DIRECTOR_EMAIL,
+            tipo_manifestacao: tipo,
+            resumo_mensagem: resumo,
+            data_envio: new Date().toLocaleString('pt-PT'),
+            link_painel: window.location.origin + '/admin.html'
+        });
+    } catch (err) {
+        console.warn("Notificação por email não foi enviada:", err);
+    }
+}
 if (clientForm) {
     clientForm.addEventListener('submit', async function (e) {
         e.preventDefault();
@@ -337,6 +361,11 @@ if (clientForm) {
                 status: "Novo",
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
+
+            // Notifica o Diretor por email — corre em paralelo, "dispara e esquece":
+            // se o email falhar (rede, configuração em falta, etc.) a manifestação já está
+            // guardada e visível no painel, por isso nunca deve bloquear nem travar o envio.
+            notificarDiretorPorEmail(selectedType, messageText);
 
             clientForm.reset();
             if (typeof removerFotoPreview === "function") removerFotoPreview();
@@ -646,35 +675,36 @@ function renderCharts(data) {
 }
 
 // ==========================================
-// 9. EXPORTAÇÃO PDF (relatório de 3 páginas)
+// 9. EXPORTAÇÃO PDF (relatório executivo, 3+ páginas)
 // ==========================================
-function carregarLogo() {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.src = "assets/Logotipo_b.png";
-        img.onload = () => {
-            const canvas = document.createElement("canvas");
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext("2d");
-            if (ctx) {
-                ctx.drawImage(img, 0, 0);
-                resolve(canvas.toDataURL("image/png"));
-            } else {
-                reject(new Error("Falha ao carregar o contexto de renderização."));
-            }
-        };
-        img.onerror = () => reject(new Error("Logótipo não encontrado"));
-    });
+
+// Carrega o logótipo como base64 usando fetch (mais fiável que Image()+canvas,
+// que pode falhar silenciosamente por questões de CORS/timing). Tenta duas
+// variantes do logótipo, caso a primeira não exista.
+async function carregarLogoBase64() {
+    const candidatos = ['assets/Logotipo_b.png', 'assets/Logotipo_m.png'];
+    for (const caminho of candidatos) {
+        try {
+            const resp = await fetch(caminho);
+            if (!resp.ok) continue;
+            const blob = await resp.blob();
+            return await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        } catch (e) { /* tenta o candidato seguinte */ }
+    }
+    console.warn('Nenhum logótipo encontrado em assets/ — o PDF será gerado sem logótipo.');
+    return null;
 }
 
 async function exportToPDF() {
     const manifestacoes = cachedMessages;
     const t = i18n[currentLang];
 
-    let logoSrc = "";
-    try { logoSrc = await carregarLogo(); } catch (e) { console.log("Sem logótipo customizado."); }
+    const logoSrc = await carregarLogoBase64();
 
     let imgGraficoTipos = chartTiposInstancia ? chartTiposInstancia.toBase64Image() : "";
     let imgGraficoEstados = chartEstadosInstancia ? chartEstadosInstancia.toBase64Image() : "";
@@ -689,135 +719,158 @@ async function exportToPDF() {
 
     const termos = {
         resumo: currentLang === 'zh' ? "执行摘要" : currentLang === 'en' ? "Executive Summary" : "Resumo Executivo",
-        indicators: currentLang === 'zh' ? "关键指标" : currentLang === 'en' ? "Performance Indicators" : "Indicadores de Desempenho",
-        dataEmissao: currentLang === 'zh' ? "发布日期:" : currentLang === 'en' ? "Issue date:" : "Data de emissão:",
-        total: currentLang === 'zh' ? "反馈总数:" : currentLang === 'en' ? "Total feedback:" : "Total de manifestações:",
+        indicators: currentLang === 'zh' ? "关键指标" : currentLang === 'en' ? "Indicadores-Chave" : "Indicadores-Chave",
+        dataEmissao: currentLang === 'zh' ? "发布日期" : currentLang === 'en' ? "Issue date" : "Data de emissão",
+        total: currentLang === 'zh' ? "反馈总数" : currentLang === 'en' ? "Total submissions" : "Total de manifestações",
         lista: currentLang === 'zh' ? "完整反馈列表" : currentLang === 'en' ? "Complete Feedback List" : "Lista Completa das Manifestações",
-        confidencial: currentLang === 'zh' ? "Brisa Tropical 酒店 - 机密文件" : currentLang === 'en' ? "Hotel Brisa Tropical - Confidential Document" : "Hotel Brisa Tropical - Documento Confidencial",
-        analiseGrafica: currentLang === 'zh' ? "图表数据分析" : currentLang === 'en' ? "Graphical Data Analysis" : "Análise Estatística Gráfica"
+        confidencial: currentLang === 'zh' ? "机密文件 · 仅供内部使用" : currentLang === 'en' ? "Confidential Document · Internal Use Only" : "Documento Confidencial · Uso Interno",
+        analiseGrafica: currentLang === 'zh' ? "图表数据分析" : currentLang === 'en' ? "Graphical Data Analysis" : "Análise Estatística Gráfica",
+        distribuicaoStatus: currentLang === 'zh' ? "按状态分布" : currentLang === 'en' ? "Status Breakdown" : "Distribuição por Estado",
+        evidencia: currentLang === 'zh' ? "已附图片证据" : currentLang === 'en' ? "Photo evidence attached" : "Evidência fotográfica anexada"
     };
 
     const stNovo = currentLang === 'zh' ? "新消息" : currentLang === 'en' ? "New" : "Novo";
     const stLido = currentLang === 'zh' ? "已读" : currentLang === 'en' ? "Read" : "Lido";
     const stResolvido = currentLang === 'zh' ? "已解决" : currentLang === 'en' ? "Resolved" : "Resolvido";
 
-    const element = document.createElement('div');
-    element.style.padding = '0px';
-    element.style.fontFamily = '"Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif';
-    element.style.color = '#333';
+    // Cores por tipo (consistentes com o painel) para as barras laterais dos cartões
+    const corPorTipo = {
+        'Reclamação': '#ef4444',
+        'Sugestão': '#f59e0b',
+        'Elogio': '#10b981'
+    };
 
-    let tableRows = '';
+    const element = document.createElement('div');
+    element.style.fontFamily = '"Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif';
+    element.style.color = '#1c1c1c';
+
+    // Faixa de cabeçalho reutilizada em cada secção (com logótipo, se existir)
+    const faixaCabecalho = (subtitulo) => `
+        <div style="background-color: #064e3b; display: flex; align-items: center; gap: 16px; padding: 18px 24px; border-radius: 6px; color: white;">
+            ${logoSrc ? `<img src="${logoSrc}" style="width: 42px; height: 42px; object-fit: contain; background: white; border-radius: 6px; padding: 4px;" />` : ''}
+            <div>
+                <div style="font-size: 16px; font-weight: 700; letter-spacing: 0.5px;">HOTEL BRISA TROPICAL</div>
+                <div style="font-size: 11px; opacity: 0.85; margin-top: 2px;">${subtitulo}</div>
+            </div>
+        </div>
+    `;
+
+    const rodape = `
+        <div style="margin-top: 24px; display: flex; justify-content: space-between; font-size: 10px; color: #999; border-top: 1px solid #eee; padding-top: 10px;">
+            <span>${termos.confidencial}</span>
+            <span>${hoje}</span>
+        </div>
+    `;
+
+    // Cartão de estatística (usado no resumo executivo)
+    const cartaoStat = (label, valor, cor) => `
+        <div style="flex: 1; background: #fff; border: 1px solid #e5e7eb; border-top: 4px solid ${cor}; border-radius: 8px; padding: 16px; text-align: center;">
+            <div style="font-size: 26px; font-weight: 700; color: #111;">${valor}</div>
+            <div style="font-size: 10.5px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px;">${label}</div>
+        </div>
+    `;
+
+    // Lista de manifestações em formato de cartão (permite incluir a foto de evidência)
+    let cardsManifestacoes = '';
     manifestacoes.forEach(item => {
         let tipoTraduzido = item.type === 'Reclamação' ? t.rec : (item.type === 'Sugestão' ? t.sug : t.elo);
         let estadoTraduzido = item.status === 'Novo' ? stNovo : (item.status === 'Lido' ? stLido : stResolvido);
+        let cor = corPorTipo[item.type] || '#6b7280';
 
         let mensagemFinal = item.message;
         if (currentLang === 'zh' && item.message_zh) mensagemFinal = item.message_zh;
         else if (currentLang === 'en' && item.message_en) mensagemFinal = item.message_en;
 
-        tableRows += `
-            <tr style="border-bottom: 1px solid #e5e7eb;">
-                <td style="padding: 10px; font-size: 12px;">${tipoTraduzido}</td>
-                <td style="padding: 10px; font-size: 12px;">${estadoTraduzido}</td>
-                <td style="padding: 10px; font-size: 12px; font-family: monospace; color: #666;">${formatTimestamp(item.createdAt)}</td>
-                <td style="padding: 10px; font-size: 12px; max-width: 320px; word-break: break-all;">${escapeHTML(mensagemFinal)}</td>
-            </tr>
+        const fotoHtml = item.photoURL
+            ? `<div style="flex-shrink: 0; text-align: center;">
+                   <img src="${item.photoURL}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd;" crossorigin="anonymous"/>
+                   <div style="font-size: 8px; color: #999; margin-top: 3px; max-width: 80px;">${termos.evidencia}</div>
+               </div>`
+            : '';
+
+        cardsManifestacoes += `
+            <div style="page-break-inside: avoid; break-inside: avoid; display: flex; gap: 14px; background: #fff; border: 1px solid #e5e7eb; border-left: 5px solid ${cor}; border-radius: 6px; padding: 14px; margin-bottom: 12px;">
+                <div style="flex: 1; min-width: 0;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
+                        <span style="background: ${cor}1A; color: ${cor}; font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.3px;">${tipoTraduzido}</span>
+                        <span style="background: #f1f5f9; color: #475569; font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 999px;">${estadoTraduzido}</span>
+                        <span style="font-size: 10px; color: #999; font-family: monospace; margin-left: auto;">${formatTimestamp(item.createdAt)}</span>
+                    </div>
+                    <div style="font-size: 12px; line-height: 1.6; color: #333; word-break: break-word;">${escapeHTML(mensagemFinal)}</div>
+                </div>
+                ${fotoHtml}
+            </div>
         `;
     });
 
+    if (manifestacoes.length === 0) {
+        cardsManifestacoes = `<p style="font-size: 13px; color: #888; text-align: center; padding: 40px 0;">${t.empty}</p>`;
+    }
+
     element.innerHTML = `
-        <div style="padding: 20px; min-height: 1060px; position: relative; box-sizing: border-box;">
-            <div style="background-color: #064e3b; display: flex; align-items: center; justify-content: center; padding: 25px; border-radius: 4px; position: relative; color: white; text-align: center;">
-                ${logoSrc ? `<img src="${logoSrc}" style="position: absolute; left: 25px; top: 18px; width: 50px; height: 50px;" />` : ''}
-                <div>
-                    <h1 style="margin: 0; font-size: 24px; letter-spacing: 1px;">HOTEL BRISA TROPICAL</h1>
-                    <div style="font-size: 14px; opacity: 0.9; margin-top: 4px;">${t.title}</div>
-                    <div style="font-size: 11px; opacity: 0.7; margin-top: 2px;">${t.navTitle}</div>
+        <div style="padding: 22px; box-sizing: border-box;">
+            ${faixaCabecalho(t.title)}
+
+            <h1 style="text-align: center; margin: 40px 0 6px; font-size: 22px; color: #111;">${termos.resumo}</h1>
+            <p style="text-align: center; font-size: 11px; color: #888; margin: 0 0 36px;">${termos.dataEmissao}: ${hoje} &nbsp;·&nbsp; ${termos.total}: ${manifestacoes.length}</p>
+
+            <div style="display: flex; gap: 12px; margin-bottom: 32px;">
+                ${cartaoStat(t.cardRec, reclamacoes, '#ef4444')}
+                ${cartaoStat(t.cardSug, sugestoes, '#f59e0b')}
+                ${cartaoStat(t.cardElo, elogios, '#10b981')}
+            </div>
+
+            <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px 24px;">
+                <h3 style="margin: 0 0 14px; font-size: 13px; color: #064e3b; text-transform: uppercase; letter-spacing: 0.5px;">${termos.distribuicaoStatus}</h3>
+                <div style="display: flex; gap: 24px; font-size: 13px;">
+                    <div>🔵 ${stNovo}: <strong>${pendentes}</strong></div>
+                    <div>⚪ ${stLido}: <strong>${lidas}</strong></div>
+                    <div>🟢 ${stResolvido}: <strong>${resolvidas}</strong></div>
                 </div>
             </div>
 
-            <h2 style="text-align: center; margin-top: 50px; font-size: 22px; color: #111;">${termos.resumo}</h2>
-
-            <div style="margin-top: 40px; font-size: 14px; line-height: 2.2;">
-                <p><strong>${termos.dataEmissao}</strong> ${hoje}</p>
-                <p><strong>${termos.total}</strong> ${manifestacoes.length}</p>
-            </div>
-
-            <div style="margin-top: 50px; background-color: #f9f9f9; border: 1px solid #064e3b; border-radius: 6px; padding: 25px;">
-                <h3 style="margin-top: 0; font-size: 16px; color: #064e3b; border-bottom: 2px solid #064e3b; padding-bottom: 8px;">${termos.indicators}</h3>
-                <div style="display: flex; justify-content: space-between; margin-top: 20px; font-size: 14px; line-height: 1.8;">
-                    <div>
-                        <p>• ${t.cardRec}: <strong>${reclamacoes}</strong></p>
-                        <p>• ${t.cardSug}: <strong>${sugestoes}</strong></p>
-                        <p>• ${t.cardElo}: <strong>${elogios}</strong></p>
-                    </div>
-                    <div>
-                        <p>• ${stResolvido}: <strong>${resolvidas}</strong></p>
-                        <p>• ${stLido}: <strong>${lidas}</strong></p>
-                        <p>• ${stNovo}: <strong>${pendentes}</strong></p>
-                    </div>
-                </div>
-            </div>
-
-            <div style="position: absolute; bottom: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 10px;">
-                <span>${termos.confidencial}</span>
-                <span>Page 1</span>
-            </div>
+            ${rodape}
         </div>
 
         <div class="html2pdf__page-break"></div>
 
-        <div style="padding: 20px; min-height: 1060px; position: relative; box-sizing: border-box;">
-            <h2 style="font-size: 20px; margin-bottom: 35px; color: #111; border-bottom: 1px solid #eee; padding-bottom: 10px;">${termos.analiseGrafica}</h2>
+        <div style="padding: 22px; box-sizing: border-box;">
+            ${faixaCabecalho(termos.analiseGrafica)}
 
-            <div style="display: flex; flex-direction: column; gap: 40px; align-items: center; margin-top: 20px;">
+            <div style="display: flex; flex-direction: column; gap: 28px; align-items: center; margin-top: 30px;">
                 ${imgGraficoTipos ? `
-                <div style="width: 85%; text-align: center; background: #fff; padding: 15px; border: 1px solid #e5e7eb; border-radius: 8px;">
-                    <img src="${imgGraficoTipos}" style="width: 100%; max-height: 350px; object-fit: contain;" />
+                <div style="width: 90%; text-align: center; background: #fff; padding: 16px; border: 1px solid #e5e7eb; border-radius: 8px;">
+                    <img src="${imgGraficoTipos}" style="width: 100%; max-height: 340px; object-fit: contain;" />
                 </div>` : ''}
 
                 ${imgGraficoEstados ? `
-                <div style="width: 85%; text-align: center; background: #fff; padding: 15px; border: 1px solid #e5e7eb; border-radius: 8px;">
+                <div style="width: 90%; text-align: center; background: #fff; padding: 16px; border: 1px solid #e5e7eb; border-radius: 8px;">
                     <img src="${imgGraficoEstados}" style="width: 100%; max-height: 300px; object-fit: contain;" />
                 </div>` : ''}
             </div>
 
-            <div style="position: absolute; bottom: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 10px;">
-                <span>${termos.confidencial}</span>
-                <span>Page 2</span>
-            </div>
+            ${rodape}
         </div>
 
         <div class="html2pdf__page-break"></div>
 
-        <div style="padding: 20px; min-height: 1060px; position: relative; box-sizing: border-box;">
-            <h2 style="font-size: 20px; margin-bottom: 25px; color: #111;">${termos.lista}</h2>
+        <div style="padding: 22px; box-sizing: border-box;">
+            ${faixaCabecalho(termos.lista)}
+            <h2 style="font-size: 16px; margin: 24px 0 16px; color: #111;">${termos.lista}</h2>
 
-            <table style="width: 100%; border-collapse: collapse; text-align: left;">
-                <thead>
-                    <tr style="background-color: #064e3b; color: white;">
-                        <th style="padding: 12px; font-size: 13px;">${t.thType}</th>
-                        <th style="padding: 12px; font-size: 13px;">${t.thStatus}</th>
-                        <th style="padding: 12px; font-size: 13px;">${t.thDate}</th>
-                        <th style="padding: 12px; font-size: 13px;">${t.thMsg}</th>
-                    </tr>
-                </thead>
-                <tbody>${tableRows}</tbody>
-            </table>
+            ${cardsManifestacoes}
 
-            <div style="position: absolute; bottom: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 10px;">
-                <span>${termos.confidencial}</span>
-                <span>Page 3</span>
-            </div>
+            ${rodape}
         </div>
     `;
 
     const opt = {
-        margin: 0,
+        margin: [8, 8, 8, 8],
         filename: `Relatorio_Brisa_Tropical_${currentLang.toUpperCase()}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        html2canvas: { scale: 2, useCORS: true, letterRendering: true, allowTaint: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'avoid-all'] }
     };
 
     if (typeof html2pdf !== 'undefined') {

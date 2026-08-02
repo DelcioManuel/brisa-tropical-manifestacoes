@@ -6,11 +6,13 @@
     <title>Livro de Manifestações Digital | Hotel Brisa Tropical</title>
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- Firebase (base de dados partilhada + upload de fotos) -->
+    <!-- Firebase (base de dados partilhada) -->
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
-    
+
+    <!-- EmailJS (notificação por email ao Diretor) -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
     <script>
         tailwind.config = {
             theme: {
@@ -75,7 +77,7 @@
                 <!-- Campo da Mensagem -->
                 <div>
                     <label id="txt-msgLabel" class="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">A sua Mensagem</label>
-                    <textarea id="message" required rows="5" class="w-full px-4 py-3 border border-stone-200 rounded-xl outline-none text-sm focus:ring-1 focus:ring-hotelGreen bg-stone-50/30 transition resize-none placeholder:text-stone-300" placeholder="Por favor, descreva detalhadamente a sua experiência..."></textarea>
+                    <textarea id="message" required maxlength="2000" rows="5" class="w-full px-4 py-3 border border-stone-200 rounded-xl outline-none text-sm focus:ring-1 focus:ring-hotelGreen bg-stone-50/30 transition resize-none placeholder:text-stone-300" placeholder="Por favor, descreva detalhadamente a sua experiência..."></textarea>
                 </div>
 
                 <!-- INTERFACE DE ANEXO -->
@@ -124,6 +126,7 @@
     </footer>
 
     <!-- SCRIPT DE INICIALIZAÇÃO E TRADUÇÃO -->
+    <script src="js/email-config.js"></script>
     <script src="js/firebase-config.js"></script>
     <script src="js/app.js"></script>
     <script>
